@@ -1,0 +1,7 @@
+/* hide streamlit footer */
+footer {visibility: hidden;}
+
+/* change markdown `code` color */
+code {
+    color: crimson;
+}

@@ -1,0 +1,8 @@
+{
+    "display_name": "My App",
+    "repository_name": "streamlit-{{cookiecutter.display_name|to_kebab}}",
+    "service_name": "{{cookiecutter.display_name|to_camel}}",
+    "_extensions": [
+        "jinja2_strcase.StrcaseExtension"
+    ]
+}

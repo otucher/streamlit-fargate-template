@@ -1,0 +1,39 @@
+# https://setuptools.pypa.io/en/latest/userguide/pyproject_config.html
+
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools_scm]
+# setuptools-scm parses .git to infer version and saves to "version.txt"
+write_to = "version.txt"
+
+[project]
+name = "{{cookiecutter.repository_name}}"
+description = "BioFx Portal Streamlit Application"
+readme = "README.md"
+authors = [
+    {name = "Oliver Tucher", email="oliver.tucher@gmail.com"}
+]
+requires-python = ">=3.10"
+license = {text = "BSD 3-Clause License"}
+classifiers = [
+    "Development Status :: 3 - Beta",
+    "Intended Audience :: Developers",
+    "Topic :: Scientific/Engineering :: Bioinformatics",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.9",
+]
+dependencies = [
+    "streamlit",
+]
+dynamic = ["version"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest"
+]
+
+[tool.setuptools.dynamic]
+# version infered from file created by setuptools-scm
+version = {file = "version.txt"}

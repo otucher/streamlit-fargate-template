@@ -1,0 +1,159 @@
+version: 2.1
+
+
+config:
+  - &workspace /tmp/workspace
+  - &env_file bashvars
+
+
+orbs:
+  aws-cli: circleci/aws-cli@3
+  node: circleci/node@5
+
+
+executors:
+  default:
+    docker:
+      - image: circleci/python:3.10
+  node:
+    docker:
+      - image: circleci/node
+
+
+jobs:
+  build-test-and-push:
+    description: Build and push image
+    executor: default
+    environment:
+      WORKSPACE: *workspace
+      ENV_FILE: *env_file
+    steps:
+      - checkout
+      - setup_remote_docker
+      - aws-cli/setup
+      - attach_workspace:
+          at: *workspace
+      - run:
+          name: Git Tag Commit
+          command: |
+            # Infer version number and project name.
+            if [[ -f VERSION ]]; then
+              read -r PROJECT_VERSION < VERSION
+              if [[ ! "$PROJECT_VERSION" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
+                echo "Version file present but contains invalid version: $PROJECT_VERSION"
+                exit 1
+              fi
+              if [[ "${CIRCLE_BRANCH}" != "master" ]]; then
+                if [[ $(git ls-remote origin $PROJECT_VERSION) ]]; then
+                  echo "A git release tag for $PROJECT_VERSION already exists; please increment VERSION file."
+                  exit 1
+                fi
+                # Check if tagged already
+                POSSIBLE_TAG=$(git describe --exact-match HEAD 2> /dev/null || echo "")
+                if [[ ! "$POSSIBLE_TAG" ]]; then
+                  # Find new tag "-rc.x" to feature branch.
+                  for i in {1..999}; do
+                    POSSIBLE_TAG=${PROJECT_VERSION}-rc.${i}
+                    git tag | grep -q $POSSIBLE_TAG && continue
+                    [ "$(git ls-remote origin $POSSIBLE_TAG)" ] && continue
+                    [ $i -eq 999 ] && exit 1
+                    break
+                  done
+                fi
+                PROJECT_VERSION=$POSSIBLE_TAG
+              fi
+            else
+              echo No VERSION file found.
+              exit 1
+            fi
+
+            set -x
+            GIT_TAG=$PROJECT_VERSION
+
+            # persist to BASH_ENV
+            echo "export GIT_TAG=${GIT_TAG}" >> ${BASH_ENV}
+
+            CURRENT_TAGS=$(git tag --points-at HEAD 2> /dev/null || echo "")
+            for tag in $CURRENT_TAGS; do
+              [[ "$tag" == "$GIT_TAG" ]] && exit 0
+            done
+
+            git tag -m "Version tag ${GIT_TAG} on ${CIRCLE_BRANCH}" ${GIT_TAG}
+            git push origin ${GIT_TAG}
+      - run:
+          name: Create Docker Variables and Persist to Workspace
+          command: |
+            {
+              echo "export GIT_TAG=${GIT_TAG}"
+              echo "export DOCKER_TAG_BASE=${AWS_ECR_ACCOUNT_URL}/${CIRCLE_PROJECT_REPONAME}"
+            } >> ${WORKSPACE}/${ENV_FILE}
+      -  run:
+          name: Load Environment Variables from Workspace
+          command: |
+            cat ${WORKSPACE}/${ENV_FILE}
+            cat ${WORKSPACE}/${ENV_FILE} >> ${BASH_ENV}
+      - run:
+          name: AWS ECR Login
+          command: aws ecr get-login-password | docker login --username AWS --password-stdin ${AWS_ECR_ACCOUNT_URL}
+      - run:
+          name: Build Docker Image
+          command: |
+            # Use cache if available.
+            [ "$(docker pull ${DOCKER_TAG_BASE}:latest)" ] && CACHE_ARG="--cache-from ${DOCKER_TAG_BASE}:latest"
+            docker build ${CACHE_ARG} -t ${DOCKER_TAG_BASE}:${GIT_TAG} .
+      - run:
+          name: Unit Test Docker Image
+          command: |
+            docker run --rm \
+              --entrypoint /bin/bash \
+              ${DOCKER_TAG_BASE}:${GIT_TAG} -c "python3 -m pytest tests/"
+      - run:
+          name: Push Docker Image to AWS ECR
+          command: docker push ${DOCKER_TAG_BASE}:${GIT_TAG}
+      - persist_to_workspace:
+          root: *workspace
+          paths:
+            - *env_file
+
+  cdk-deploy:
+    executor: node
+    parameters:
+      cdk_stack:
+        description: name of stack to deploy
+        type: string
+        default: "--all"
+    steps:
+      - attach_workspace:
+          at: *workspace
+      - checkout
+      - working_directory: cdk
+      - node/install
+      - node/build
+      - run:
+          name: Run Cdk Command
+          no_output_timeout: 45m
+          command: npx cdk deploy --require-approval=never --ci --progress=events << parameters.cdk_stack >>
+
+
+workflows:
+  main:
+    jobs:
+      # manage ECR before pushing docker image
+      - cdk-deploy:
+          name: cdk-deploy-ecr
+          cdk_stack: EcrStack
+
+      - build-test-and-push:
+          context: ci
+          requires:
+            - cdk-deploy-ecr
+
+      - approve-deploy:
+          type: approval
+
+      - cdk-deploy:
+          name: cdk-deploy-lambda
+          cdk_stack: FargateStack
+          requires:
+            - approve-deploy
+            - build-test-and-push

@@ -1,0 +1,22 @@
+# this configures streamlit colors and themes
+# https://docs.streamlit.io/library/advanced-features/configuration
+
+[server]
+port = 8501
+headless = true
+
+[browser]
+gatherUsageStats = false
+serverPort = 8501
+
+[logger]
+# Level of logging: 'error', 'warning', 'info', or 'debug'.
+# Default: 'info'
+level = "info"
+
+[theme]
+primaryColor = "#F63366"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F0F2F6"
+textColor = "#262730"
+font = "sans serif"
