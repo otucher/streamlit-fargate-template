@@ -8,5 +8,5 @@ Download cookiecutter and dependancies and run it with this template.
 
 ```sh
 pip install cookiecutter jinja2_strcase
-cookiecutter gh:otucher/python-template
+cookiecutter gh:otucher/streamlit-fargate-template
 ```
